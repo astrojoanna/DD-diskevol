@@ -8,6 +8,7 @@ The disk evolution part was used in:
 The disk evolution + dust evolution modules were used in:
 
 * [Drążkowska & Dullemond (2018) A&A 614, A62](https://ui.adsabs.harvard.edu/abs/2018A%26A...614A..62D/abstract)
+* [Lichtenberg et al. (2021) Science 371, 6527, 365](https://science.sciencemag.org/content/371/6527/365)
 
 HOW TO RUN THE CODE
 
