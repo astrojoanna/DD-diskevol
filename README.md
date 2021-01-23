@@ -59,3 +59,5 @@ CREDITS
 If you make use of this code, or any of its parts, please cite this repository. 
 If you use the disk evolution part, please cite [Dullemond, Natta & Testi (2006) ApJ 645, L69](https://ui.adsabs.harvard.edu/abs/2006ApJ...645L..69D/abstract).
 If you use the dust evolution part, please cite [Drążkowska & Dullemond (2018) A&A 614, A62](https://ui.adsabs.harvard.edu/abs/2018A%26A...614A..62D/abstract). 
+The version used in [Lichtenberg et al. (2021) Science 371, 6527, 365](https://science.sciencemag.org/content/371/6527/365) is available on [![DOI](https://zenodo.org/badge/316305514.svg)](https://zenodo.org/badge/latestdoi/316305514)
+
