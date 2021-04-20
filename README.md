@@ -17,7 +17,7 @@ Review `Makefile` to include your Fortran compiler and compiler flags.
 Compile with `make`.
 
 Run with `./diskevol params.par`, where `params.par` is parameter file.
-The parameter file included in this repository corresponds to fiducial setup from [Drążkowska & Dullemond (2018) A&A 614, A62](https://ui.adsabs.harvard.edu/abs/2018A%26A...614A..62D/abstract), which was used in Lichtenberg et al. (2020).
+The parameter file included in this repository corresponds to fiducial setup from [Drążkowska & Dullemond (2018) A&A 614, A62](https://ui.adsabs.harvard.edu/abs/2018A%26A...614A..62D/abstract), which was used in [Lichtenberg et al. (2021) Science 371, 6527, 365](https://science.sciencemag.org/content/371/6527/365).
 
 OUTPUT
 
