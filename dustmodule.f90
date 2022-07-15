@@ -145,7 +145,7 @@ module dust_module
       doubleprecision, dimension(:), allocatable :: Hg
       doubleprecision, dimension(:), allocatable :: sigmaprev
       doubleprecision, dimension(:), allocatable :: Peq, Pvap
-      doubleprecision                            :: difference
+      doubleprecision, dimension(:), allocatable :: Rcond, Revap, difference
       doubleprecision, dimension(:), allocatable :: vfrag
       doubleprecision, dimension(:), allocatable :: Ddust
       doubleprecision                            :: eta, largefrac
@@ -155,7 +155,7 @@ module dust_module
       NN = size(rgrid(:))-nshift
 
       allocate(sigmag(NN), cs(NN), vK(NN), omegaK(NN), Pg(NN), Hg(NN), sigmaprev(NN), Peq(NN), Pvap(NN), vfrag(NN), &
-               Ddust(NN))
+               Ddust(NN), difference(NN), Rcond(NN), Revap(NN))
 
       sigmaprev(:) = sigmad(:)
 
@@ -182,13 +182,7 @@ module dust_module
       rhop(1:NN) = rhoice*rhosil*sigmad(1:NN)/(rhoice*(sigmad(1:NN)-sice(1:NN))+rhosil*sice(1:NN))
 
    ! fragmentation velocity
-      do i = 1, NN
-         if (sice(i) > 0.01 * sigmad(i)) then
-            vfrag(i) = 1.d+3
-         else
-            vfrag(i) = 1.d+2
-         endif
-      enddo
+      vfrag(1:NN) = 1000./(1. + 9.*dexp(-2.*200.*(sice(1:NN)/sigmad(1:NN)-0.01)))
 
    ! start dust and vapour: r*Sigma will be evolved
       rsigmad(1:NN) = sigmad(1:NN) * rgrid(1+nshift:NN+nshift)
@@ -398,27 +392,20 @@ module dust_module
       rsvap(NN) = rgrid(NN+nshift) * 5.e-29
       svap(1:NN) = rsvap(1:NN) / rgrid(1+nshift:NN+nshift)
 
-    ! evaporation
+    ! evaporation and recondensation
       Peq(1:NN) = 1.14d+13*exp(-1.d0*6062./Tmid(1+nshift:NN+nshift))
-      Pvap(1:NN) = svap(1:NN) * kk * Tmid(1+nshift:NN+nshift) * omegaK(1:NN) / (2.d0 * cs(1:NN) * mH2O)
-      do i = 1, NN
-         if ((log(Peq(i)/Pvap(i))>0.d0).and.(sice(i)>5.d-29)) then
-            difference = min((Peq(i)-Pvap(i))*2.*cs(i)*mh2/(omegaK(i)*kk*Tmid(i+nshift)),sice(i)-5.d-29)
-            sigmad(i) = max(sigmad(i) - difference,1.e-28)
-            svap(i) = svap(i) + difference
-            sice(i) = max(sice(i) - difference,5.e-29)
-         endif
-      enddo
-
-    ! recondensation
-      do i = 1, NN
-         if ((log(Peq(i)/Pvap(i))<0.d0).and.(svap(i)>1.d-7).and.(sigmad(i)>1.e-6)) then
-            difference = min((Pvap(i)-Peq(i))*2.*cs(i)*mh2/(omegaK(i)*kk*Tmid(i+nshift)),svap(i)-5.e-29)
-            sigmad(i) = sigmad(i) + difference
-            sice(i) = sice(i) + difference
-            svap(i) = max(svap(i) - difference,5.e-29)
-         endif
-      enddo
+      Rcond(1:NN) = 6.*dsqrt(kk*Tmid(1+nshift:NN+nshift)/mH2O)/Hg(1:NN)/(pi*a1(1:NN)*rhop(1:NN)) ! condensation rate
+      Revap(1:NN) = 6.*dsqrt(2.*pi*mH2O/(kk*Tmid(1+nshift:NN+nshift)))*Peq(1:NN)/(pi*a1(1:NN)*rhop(1:NN)) ! evaporation rate
+      difference(1:NN) = (Rcond(1:NN)*svap(1:NN) - Revap(1:NN))*sice(1:NN)*dt
+      where (difference(1:NN) >0.)      ! condensation
+         sice(1:NN) = sice(1:NN) + min(difference(1:NN),svap(1:NN)-5.d-29)
+         sigmad(1:NN) = sigmad(1:NN) + min(difference(1:NN),svap(1:NN)-5.d-29)
+         svap(1:NN) = svap(1:NN) - min(difference(1:NN),svap(1:NN)-5.d-29)
+      elsewhere    ! evaporation
+         svap(1:NN) = svap(1:NN) + min(-1.*difference(1:NN), sice(1:NN)-5.d-29)
+         sigmad(1:NN) = sigmad(1:NN) - min(-1.*difference(1:NN),sice(1:NN)-5.d-29)
+         sice(1:NN) = sice(1:NN) - min(-1.*difference(1:NN),sice(1:NN) - 5.d-29)
+      end where
 
    ! planetesimal formation
       do i = 1, NN
@@ -434,10 +421,10 @@ module dust_module
 
    ! next timestep limitation
       dt = 1.5 * dt
-      dt = min(dt, 0.2*minval(dr(:) / dabs(vdust(:))))
-      dt = min(dt, 0.2*minval(dr(:)**2./Dgas(1+nshift:NN+nshift)))
+      dt = min(dt, 0.025*minval(dr(:) / dabs(vdust(:))))
+      dt = min(dt, 0.025*minval(dr(:)**2./Dgas(1+nshift:NN+nshift)))
 
-      deallocate(sigmag, cs, vK, omegaK, Pg, Hg, vfrag, Pvap, Peq)
+      deallocate(sigmag, cs, vK, omegaK, Pg, Hg, vfrag, Pvap, Peq, Rcond, Revap, difference)
 
       return
    end subroutine dust_evol
