@@ -209,7 +209,7 @@ program diskevol
      !
      ! Dust evolution works according to the old time step but sets the new time step
      !
-     call dust_evol(time,dt,diskevol_grid_r,diskevol_tprsigma,diskevol_temp,diskevol_dcoef, &
+     call dust_evol(time,dt,diskevol_grid_r,diskevol_tprsigma,diskevol_temp,diskevol_nu, &
                     diskevol_mstar,diskevol_ml_sigdot,diskevol_vr,alphadust,diskevol_gtd)
      !
      ! Update time

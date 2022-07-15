@@ -166,7 +166,6 @@ module dust_module
       vK(1:NN) = omegaK(1:NN) * rgrid(1+nshift:NN+nshift)
       Pg(1:NN) = sigmag(1:NN) * cs(1:NN) * omegaK(1:NN) / sqrt(2.*pi)  ! ???
       Hg(1:NN) = cs(1:NN) / omegaK(1:NN)   ! ???
-      Ddust(1:NN) = Dgas(1+nshift:NN+nshift)
 
    ! infall
       sigmad(1:NN) = sigmad(1:NN) + eta * dsigmag(1+nshift:NN+nshift) * dt
@@ -272,6 +271,9 @@ module dust_module
       vdust(1:NN) = (2. * vdrift(1:NN) * stbar(1:NN) + vgas(1+nshift:NN+nshift) * (1. + etamid(1:NN))) / &
                     (stbar(1:NN)**2. + (1 + etamid(1:NN))**2.)
 
+   ! dust diffusion coeficient
+      Ddust(1:NN) = alphadust * cs(1:NN) * Hg(1:NN) / (1 + stbar(1:NN)**2.)
+
    ! fluxes calculation - diffusion fluxes
       ddtgdr(2:NN) = (sigmad(2:NN)/sigmag(2:NN)-sigmad(1:NN-1)/sigmag(1:NN-1)) / &
                      (rgrid(2+nshift:NN+nshift)-rgrid(1+nshift:NN-1+nshift))
@@ -285,7 +287,7 @@ module dust_module
 
       dvtgdr(2:NN) = (svap(2:NN)/sigmag(2:NN)-svap(1:NN-1)/sigmag(1:NN-1)) / &
                      (rgrid(2+nshift:NN+nshift)-rgrid(1+nshift:NN-1+nshift))
-      dvtgdr(1) = max(0.,dvtgdr(1) - (dvtgdr(3) - dvtgdr(2)) * dr(1) / dr(2))
+      dvtgdr(1) = max(0.,dvtgdr(2) - (dvtgdr(3) - dvtgdr(2)) * dr(1) / dr(2))
       diffvap(1:NN) = rgrid(1+nshift:NN+nshift) * Dgas(1+nshift:NN+nshift) * sigmag(1:NN) * dvtgdr(1:NN)
 
    ! flux limiters
@@ -350,7 +352,7 @@ module dust_module
 
       do i = 3, NN-1
          if (rsvap(i) /= rsvap(i-1)) then
-            if (vgas(i) < 0) then
+            if (vgas(i+nshift) < 0) then
                rvap12(i) = (rsvap(i+1) - rsvap(i)) / (rsvap(i) - rsvap(i-1))
             else
                rvap12(i) = (rsvap(i-1) - rsvap(i-2)) / (rsvap(i) - rsvap(i-1))
@@ -376,10 +378,11 @@ module dust_module
                 *(rsice(2:NN)-rsice(1:NN-1)) - difflice(2:NN)
       Fice12(1) = min(0.d0, vdust(1)*rsice(1)) - difflice(1)
 
-      Fvap12(2:NN) = 0.5d0*vgas(2:NN)*((1.d0+sign(1.d0,vgas(2:NN)))*rsvap(1:NN-1)+(1.d0-sign(1.d0,vgas(2:NN)))*rsvap(2:NN)) &
-                 + 0.5d0*dabs(vgas(2:NN))*(1.d0-dabs(vgas(2:NN)*dt/dr(2:NN)))*limitvap(2:NN)*(rsvap(2:NN)-rsvap(1:NN-1)) &
+      Fvap12(2:NN) = 0.5d0*vgas(2+nshift:NN+nshift)*((1.d0+sign(1.d0,vgas(2+nshift:NN+nshift)))*rsvap(1:NN-1) &
+                 +(1.d0-sign(1.d0,vgas(2+nshift:NN+nshift)))*rsvap(2:NN)) + 0.5d0*dabs(vgas(2+nshift:NN+nshift)) &
+                 *(1.d0-dabs(vgas(2+nshift:NN+nshift)*dt/dr(2:NN)))*limitvap(2:NN)*(rsvap(2:NN)-rsvap(1:NN-1)) &
                  - diffvap(2:NN)
-      Fvap12(1) = min(0.d0, vgas(1) * rsvap(1)) - diffvap(1)
+      Fvap12(1) = min(0.d0, vgas(1+nshift) * rsvap(1)) - diffvap(1)
 
    ! advection
       rsigmad(1:NN-1) = max(rsigmad(1:NN-1) - (F12(2:NN) - F12(1:NN-1)) * dt / dr(1:NN-1), 1.d-28*rgrid(1+nshift:NN-1+nshift))
@@ -388,11 +391,11 @@ module dust_module
       sigmad(1:NN) = rsigmad(1:NN) / rgrid(1+nshift:NN+nshift)
 
       rsice(1:NN-1) = max(rsice(1:NN-1) - (Fice12(2:NN) - Fice12(1:NN-1)) * dt / dr(1:NN-1), 5.e-29*rgrid(1+nshift:NN+nshift))
-      rsice(NN) = 5.e-29 * rgrid(NN)
+      rsice(NN) = 5.e-29 * rgrid(NN+nshift)
       sice(1:NN) = rsice(1:NN) / rgrid(1+nshift:NN+nshift)
 
       rsvap(1:NN-1) = max(rsvap(1:NN-1) - (Fvap12(2:NN) - Fvap12(1:NN-1)) * dt / dr(1:NN-1), rgrid(1+nshift:NN+nshift)*5.e-29)
-      rsvap(NN) = rgrid(NN) * 5.e-29
+      rsvap(NN) = rgrid(NN+nshift) * 5.e-29
       svap(1:NN) = rsvap(1:NN) / rgrid(1+nshift:NN+nshift)
 
     ! evaporation
