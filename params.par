@@ -2,6 +2,6 @@ number_of_radial_zones                    1400
 gas_to_dust                               100.
 flaring_angle                             0.05
 background_temperature                    10.
-cloud_omega                               5.d-15
+cloud_omega                               7.d-15
 viscous_alpha                             1.d-3
 dust_alpha                                1.d-5

@@ -25,7 +25,6 @@ module dust_module
 !-----------variables------------------
    integer                                    :: i
    doubleprecision, dimension(:), allocatable :: sigmad
-   doubleprecision, dimension(:), allocatable :: rsigmad
    doubleprecision, dimension(:), allocatable :: sigmaplts
    doubleprecision, dimension(:), allocatable :: gammad
    doubleprecision, dimension(:), allocatable :: etadrift
@@ -38,22 +37,16 @@ module dust_module
    doubleprecision, dimension(:), allocatable :: stdf
    doubleprecision, dimension(:), allocatable :: a1
    doubleprecision, dimension(:), allocatable :: dsigmaplts
-   doubleprecision, dimension(:), allocatable :: F12, Fice12, Fvap12
-   doubleprecision, dimension(:), allocatable :: limit, limitice, limitvap
-   doubleprecision, dimension(:), allocatable :: r12, rice12, rvap12
-   doubleprecision, dimension(:), allocatable :: diffl, difflice, diffvap
    doubleprecision, dimension(:), allocatable :: aini, ainiprev
    doubleprecision, dimension(:), allocatable :: stini
    doubleprecision, dimension(:), allocatable :: stbar
    doubleprecision, dimension(:), allocatable :: etamid
    doubleprecision, dimension(:), allocatable :: vdust
-   doubleprecision, dimension(:), allocatable :: ddtgdr, ditgdr, dvtgdr
    doubleprecision, dimension(:), allocatable :: dr
-   doubleprecision, dimension(:), allocatable :: time0
-   doubleprecision, dimension(:), allocatable :: sice, rsice
-   doubleprecision, dimension(:), allocatable :: svap, rsvap
-   doubleprecision, dimension(:), allocatable :: rhop
    doubleprecision, dimension(:), allocatable :: srock
+   doubleprecision, dimension(:), allocatable :: sice
+   doubleprecision, dimension(:), allocatable :: svap
+   doubleprecision, dimension(:), allocatable :: rhop
    doubleprecision, dimension(:), allocatable :: mflux
    contains
 
@@ -73,11 +66,10 @@ module dust_module
       eta = 1. / gtd
 
       NN = size(rgrid(:))-nshift
-      allocate(sigmad(NN), sigmaplts(NN), srock(NN), sice(NN), rsice(NN), svap(NN), rsvap(NN))
-      allocate(rsigmad(NN), gammad(NN), etadrift(NN), vdrift(NN), lmfp(NN), st0(NN), st1(NN), stfrag(NN), stdrift(NN), &
-               stdf(NN), a1(NN), dsigmaplts(NN), F12(NN), limit(NN), r12(NN), diffl(NN), aini(NN), stini(NN), stbar(NN), &
-               etamid(NN), vdust(NN), ddtgdr(NN), dr(NN), time0(NN), rhop(NN), rice12(NN), limitice(NN), &
-               Fice12(NN), difflice(NN), ditgdr(NN), dvtgdr(NN), diffvap(NN), rvap12(NN), limitvap(NN), Fvap12(NN), &
+      allocate(sigmad(NN), sigmaplts(NN), srock(NN), sice(NN), svap(NN))
+      allocate(gammad(NN), etadrift(NN), vdrift(NN), lmfp(NN), st0(NN), st1(NN), stfrag(NN), stdrift(NN), &
+               stdf(NN), a1(NN), dsigmaplts(NN), aini(NN), stini(NN), stbar(NN), &
+               etamid(NN), vdust(NN), dr(NN), rhop(NN), &
                ainiprev(NN), mflux(NN))
 
       do i = 1, NN
@@ -93,7 +85,6 @@ module dust_module
       enddo
       sigmad(:) = sice(:) + srock(:)
       sigmaplts(:) = 1.d-28
-      time0(:) = 0.d0
       ainiprev(:) = a0
 
       do i = 1, NN-1
@@ -109,12 +100,101 @@ module dust_module
    subroutine dust_cleanup
       implicit none
 
-      deallocate(rsigmad, gammad, etadrift, vdrift, lmfp, st0, st1, stfrag, stdrift, dvtgdr, diffvap, rvap12, limitvap, &
-               stdf, a1, dsigmaplts, F12, Fice12, limit, limitice, r12, rice12, diffl, aini, stini, stbar, &
-               etamid, vdust, ddtgdr, ditgdr, dr, sigmad, sigmaplts, sice, rsice, svap, rsvap, srock, rhop, difflice, &
-               Fvap12, ainiprev)
+      deallocate(sigmad, sigmaplts, srock, sice, svap, gammad, etadrift, vdrift, &
+               lmfp, st0, st1, stfrag, stdrift, stdf, a1, dsigmaplts, aini, &
+               stini, stbar, etamid, vdust, dr, rhop, ainiprev, mflux)
 
    end subroutine dust_cleanup
+   
+!--------------------------------------------------------------
+! This subroutine calculates total flux and performs advection of given 
+! component based on velocity and denisty arrays and the diffusion 
+! coefficient provided as input.
+!--------------------------------------------------------------
+
+   subroutine advection(dt, rgrid, dr, sigma, sigmag, velocity, Diff, massf)
+      doubleprecision, dimension(:), allocatable :: rgrid, sigmag, dr
+      doubleprecision, dimension(:) :: Diff, velocity
+      doubleprecision :: dt
+      doubleprecision, dimension(:), allocatable :: massf
+      doubleprecision, dimension(:), allocatable :: sigma
+      doubleprecision, dimension(:), allocatable :: rsigma, ddtgdr, diffl, r12, limit, F12
+      integer :: NN
+      
+      NN = size(rgrid(:))-nshift
+      
+      allocate(rsigma(NN), ddtgdr(NN), diffl(NN), r12(NN), limit(NN), F12(NN))
+   
+      rsigma(1:NN) = sigma(1:NN) * rgrid(1+nshift:NN+nshift)
+      
+      ! calculate the diffusion flux
+      ddtgdr(2:NN) = (sigma(2:NN)/sigmag(2:NN)-sigma(1:NN-1)/sigmag(1:NN-1)) / &
+                     (rgrid(2+nshift:NN+nshift)-rgrid(1+nshift:NN-1+nshift))
+      ddtgdr(1) = max(0.d0,ddtgdr(2) - (ddtgdr(3) - ddtgdr(2)) * dr(1)/dr(2))
+      diffl(1:NN) = rgrid(1+nshift:NN+nshift) * Diff(1:NN) * sigmag(1:NN) * ddtgdr(1:NN)
+   
+      ! calculate the flux limiter
+      do i = 3, NN-1
+         if (velocity(i) < 0) then
+            if (abs(rsigma(i) - rsigma(i-1)) > 1.d-28) then
+               r12(i) = (rsigma(i+1) - rsigma(i)) / (rsigma(i) - rsigma(i-1))
+            else
+               r12(i) = 0.0
+            endif
+         else
+            if (abs(rsigma(i) - rsigma(i-1)) > 1.d-28) then
+               r12(i) = (rsigma(i-1) - rsigma(i-2)) / (rsigma(i) - rsigma(i-1))
+            else
+               r12(i) = 0.0
+            endif
+         endif
+      enddo
+         if (velocity(NN) < 0) then
+            if (abs(rsigma(NN) - rsigma(NN-1)) > 1.d-28) then
+               r12(NN) = ( -1.d0* rsigma(NN)) / (rsigma(NN) - rsigma(NN-1))
+            else
+               r12(NN) = 0.0
+            endif
+         else
+            if (abs(rsigma(NN) - rsigma(NN-1)) > 1.d-28) then
+               r12(NN) = (rsigma(NN-1) - rsigma(NN-2)) / (rsigma(NN) - rsigma(NN-1))
+            else
+               r12(NN) = 0.0
+            endif
+         endif
+         if (velocity(2) < 0) then
+            if (abs(rsigma(2) - rsigma(1)) > 1.d-28) then
+               r12(2) = (rsigma(3) - rsigma(2)) / (rsigma(2) - rsigma(1))
+            else
+               r12(2) = 0.0
+            endif
+         else
+            if (abs(rsigma(2) - rsigma(1)) > 1.d-28) then
+               r12(2) = rsigma(1) / (rsigma(2) - rsigma(1))
+            else
+               r12(2) = 0.0
+            endif
+         endif
+         r12(1) = 0.d0
+
+      limit(:) = (r12(:) + abs(r12(:))) / (1.d0 + abs(r12(:)))
+      
+      ! calculate the total flux
+      F12(2:NN) = 0.5d0*velocity(2:NN)*((1.d0+sign(1.d0,velocity(2:NN)))*rsigma(1:NN-1)+(1.d0-sign(1.d0,velocity(2:NN)))  &
+                *rsigma(2:NN)) + 0.5d0 * dabs(velocity(2:NN)) * (1.d0-dabs(velocity(2:NN)*dt/dr(2:NN)))*limit(2:NN)  &
+                *(rsigma(2:NN)-rsigma(1:NN-1)) - diffl(2:NN)
+      F12(1) = min(0.d0, velocity(1)*rsigma(1)) - diffl(1)
+      
+      massf(1:NN) = 2.*pi*(F12(1:NN)) ! mass flux for the output
+      
+      ! do the advection - modify the surface density
+      rsigma(1:NN-1) = max(rsigma(1:NN-1) - (F12(2:NN) - F12(1:NN-1)) * dt / dr(1:NN-1), 5.d-29*rgrid(1+nshift:NN-1+nshift))
+      rsigma(NN) = 5.d-29 * rgrid(NN+nshift)
+      sigma(1:NN) = rsigma(1:NN) / rgrid(1+nshift:NN+nshift)
+      
+      deallocate(rsigma, ddtgdr, diffl, r12, limit, F12)
+   
+   end subroutine advection
 
 !--------------------------------------------------------------
 ! This subroutine performs one time-step of dust evolution and planetesimal
@@ -143,21 +223,19 @@ module dust_module
       doubleprecision, dimension(:), allocatable :: omegaK
       doubleprecision, dimension(:), allocatable :: Pg
       doubleprecision, dimension(:), allocatable :: Hg
-      doubleprecision, dimension(:), allocatable :: sigmaprev
       doubleprecision, dimension(:), allocatable :: Peq, Pvap
       doubleprecision, dimension(:), allocatable :: Rcond, Revap, difference
       doubleprecision, dimension(:), allocatable :: vfrag
       doubleprecision, dimension(:), allocatable :: Ddust
+      doubleprecision, dimension(:), allocatable :: mrock, mice, mvap
       doubleprecision                            :: eta, largefrac
 
       eta = 1./gtd
 
       NN = size(rgrid(:))-nshift
 
-      allocate(sigmag(NN), cs(NN), vK(NN), omegaK(NN), Pg(NN), Hg(NN), sigmaprev(NN), Peq(NN), Pvap(NN), vfrag(NN), &
-               Ddust(NN), difference(NN), Rcond(NN), Revap(NN))
-
-      sigmaprev(:) = sigmad(:)
+      allocate(sigmag(NN), cs(NN), vK(NN), omegaK(NN), Pg(NN), Hg(NN), Peq(NN), Pvap(NN), vfrag(NN), &
+               Ddust(NN), difference(NN), Rcond(NN), Revap(NN), mrock(NN), mice(NN), mvap(NN))
 
    ! retrive gas variables from the input
       sigmag(1:NN) = tprsigmag(1+nshift:NN+nshift) / (2.*pi*rgrid(1+nshift:NN+nshift))
@@ -168,26 +246,28 @@ module dust_module
       Hg(1:NN) = cs(1:NN) / omegaK(1:NN)   ! ???
 
    ! infall
-      sigmad(1:NN) = sigmad(1:NN) + eta * dsigmag(1+nshift:NN+nshift) * dt
+      srock(1:NN) = srock(1:NN) + 0.5 * eta * dsigmag(1+nshift:NN+nshift) * dt
       sice(1:NN) = sice(1:NN) + 0.5 * eta * dsigmag(1+nshift:NN+nshift) * dt
-!      write(*,*) 'in dust mod:', eta, sum(dsigmag(1+nshift:NN+nshift)), dt
-
-      do i = 1, NN
-         if ( (sigmaprev(i) < 1.d-6) .and. (sigmad(i) > 1.d-6) ) then
-            time0(i) = time   ! this is to delay the start of initial growth until sigmad reaches a reasonable value
-         endif
-      enddo
+      
+   ! evaporation and recondensation
+      Peq(1:NN) = 1.14d+13*exp(-1.d0*6062./Tmid(1+nshift:NN+nshift))
+      Rcond(1:NN) = 6.*dsqrt(kk*Tmid(1+nshift:NN+nshift)/mH2O)/Hg(1:NN)/(pi*a1(1:NN)*rhop(1:NN)) ! condensation rate
+      Revap(1:NN) = 6.*dsqrt(2.*pi*mH2O/(kk*Tmid(1+nshift:NN+nshift)))*Peq(1:NN)/(pi*a1(1:NN)*rhop(1:NN)) ! evaporation rate
+      difference(1:NN) = (Rcond(1:NN)*svap(1:NN) - Revap(1:NN))*sice(1:NN)*dt
+      where (difference(1:NN) >0.)      ! condensation
+         sice(1:NN) = sice(1:NN) + min(difference(1:NN),svap(1:NN)-5.d-29)
+         svap(1:NN) = svap(1:NN) - min(difference(1:NN),svap(1:NN)-5.d-29)
+      elsewhere    ! evaporation
+         svap(1:NN) = svap(1:NN) + min(-1.*difference(1:NN), sice(1:NN)-5.d-29)
+         sice(1:NN) = sice(1:NN) - min(-1.*difference(1:NN),sice(1:NN) - 5.d-29)
+      end where
+      sigmad(1:NN) = srock(1:NN) + sice(1:NN) 
 
    ! internal density of grains
-      rhop(1:NN) = rhoice*rhosil*sigmad(1:NN)/(rhoice*(sigmad(1:NN)-sice(1:NN))+rhosil*sice(1:NN))
+      rhop(1:NN) = rhoice*rhosil*sigmad(1:NN)/(rhoice*srock(1:NN)+rhosil*sice(1:NN))
 
    ! fragmentation velocity
       vfrag(1:NN) = 1000./(1. + 9.*dexp(-2.*200.*(sice(1:NN)/sigmad(1:NN)-0.01)))
-
-   ! start dust and vapour: r*Sigma will be evolved
-      rsigmad(1:NN) = sigmad(1:NN) * rgrid(1+nshift:NN+nshift)
-      rsice(1:NN) = sice(1:NN) * rgrid(1+nshift:NN+nshift)
-      rsvap(1:NN) = svap(1:NN) * rgrid(1+nshift:NN+nshift)
 
    ! pressure gradient and maximum drift speed
       do i = 1, NN-1
@@ -265,166 +345,33 @@ module dust_module
       vdust(1:NN) = (2. * vdrift(1:NN) * stbar(1:NN) + vgas(1+nshift:NN+nshift) * (1. + etamid(1:NN))) / &
                     (stbar(1:NN)**2. + (1 + etamid(1:NN))**2.)
 
-   ! dust diffusion coeficient
+   ! dust diffusion coefficient
       Ddust(1:NN) = alphadust * cs(1:NN) * Hg(1:NN) / (1 + stbar(1:NN)**2.)
-
-   ! fluxes calculation - diffusion fluxes
-      ddtgdr(2:NN) = (sigmad(2:NN)/sigmag(2:NN)-sigmad(1:NN-1)/sigmag(1:NN-1)) / &
-                     (rgrid(2+nshift:NN+nshift)-rgrid(1+nshift:NN-1+nshift))
-      ddtgdr(1) = max(0.d0,ddtgdr(2) - (ddtgdr(3) - ddtgdr(2)) * dr(1)/dr(2))
-      diffl(1:NN) = rgrid(1+nshift:NN+nshift) * Ddust(1:NN) * sigmag(1:NN) * ddtgdr(1:NN)
-
-      ditgdr(2:NN) = (sice(2:NN)/sigmag(2:NN)-sice(1:NN-1)/sigmag(1:NN-1)) / &
-                     (rgrid(2+nshift:NN+nshift)-rgrid(1+nshift:NN-1+nshift))
-      ditgdr(1) = max(0.,ditgdr(2) - (ditgdr(3) - ditgdr(2)) * dr(1)/dr(2))
-      difflice(1:NN) = rgrid(1+nshift:NN+nshift) * Ddust(1:NN) * sigmag(1:NN) * ditgdr(1:NN)
-
-      dvtgdr(2:NN) = (svap(2:NN)/sigmag(2:NN)-svap(1:NN-1)/sigmag(1:NN-1)) / &
-                     (rgrid(2+nshift:NN+nshift)-rgrid(1+nshift:NN-1+nshift))
-      dvtgdr(1) = max(0.,dvtgdr(2) - (dvtgdr(3) - dvtgdr(2)) * dr(1) / dr(2))
-      diffvap(1:NN) = rgrid(1+nshift:NN+nshift) * Dgas(1+nshift:NN+nshift) * sigmag(1:NN) * dvtgdr(1:NN)
-
-   ! flux limiters
-      do i = 3, NN-1
-         if (vdust(i) < 0) then
-            if (abs(rsigmad(i) - rsigmad(i-1)) > 1.d-28) then
-               r12(i) = (rsigmad(i+1) - rsigmad(i)) / (rsigmad(i) - rsigmad(i-1))
-               rice12(i) = (rsice(i+1) - rsice(i)) / (rsice(i) - rsice(i-1))
-            else
-               r12(i) = 0.0
-               rice12(i) = 0.0
-            endif
-         else
-            if (abs(rsigmad(i) - rsigmad(i-1)) > 1.d-28) then
-               r12(i) = (rsigmad(i-1) - rsigmad(i-2)) / (rsigmad(i) - rsigmad(i-1))
-               rice12(i) = (rsice(i-1) - rsice(i-2)) / (rsice(i) - rsice(i-1))
-            else
-               r12(i) = 0.0
-               rice12(i) = 0.0
-            endif
-         endif
-      enddo
-         if (vdust(NN) < 0) then
-            if (abs(rsigmad(NN) - rsigmad(NN-1)) > 1.d-28) then
-               r12(NN) = ( -1.d0* rsigmad(NN)) / (rsigmad(NN) - rsigmad(NN-1))
-               rice12(NN) = ( -1.d0* rsice(NN)) / (rsice(NN) - rsice(NN-1))
-            else
-               r12(NN) = 0.0
-               rice12(NN) = 0.0
-            endif
-         else
-            if (abs(rsigmad(NN) - rsigmad(NN-1)) > 1.d-28) then
-               r12(NN) = (rsigmad(NN-1) - rsigmad(NN-2)) / (rsigmad(NN) - rsigmad(NN-1))
-               rice12(NN) = (rsice(NN-1) - rsice(NN-2)) / (rsice(NN) - rsice(NN-1))
-            else
-               r12(NN) = 0.0
-               rice12(NN) = 0.0
-            endif
-         endif
-         if (vdust(2) < 0) then
-            if (abs(rsigmad(2) - rsigmad(1)) > 1.d-28) then
-               r12(2) = (rsigmad(3) - rsigmad(2)) / (rsigmad(2) - rsigmad(1))
-               rice12(2) = (rsice(3) - rsice(2)) / (rsice(2) - rsice(1))
-            else
-               r12(2) = 0.0
-               rice12(2) = 0.0
-            endif
-         else
-            if (abs(rsigmad(2) - rsigmad(1)) > 1.d-28) then
-               r12(2) = rsigmad(1) / (rsigmad(2) - rsigmad(1))
-               rice12(2) = rsice(1) / (rsice(2) - rsice(1))
-            else
-               r12(2) = 0.0
-               rice12(2) = 0.0
-            endif
-         endif
-         r12(1) = 0.d0
-         rice12(1) = 0.d0
-
-      limit(:) = (r12(:) + abs(r12(:))) / (1.d0 + abs(r12(:)))
-      limitice(:) = (rice12(:) + abs(rice12(:))) / (1.d0 + abs(rice12(:)))
-
-      do i = 3, NN-1
-         if (rsvap(i) /= rsvap(i-1)) then
-            if (vgas(i+nshift) < 0) then
-               rvap12(i) = (rsvap(i+1) - rsvap(i)) / (rsvap(i) - rsvap(i-1))
-            else
-               rvap12(i) = (rsvap(i-1) - rsvap(i-2)) / (rsvap(i) - rsvap(i-1))
-            endif
-         else
-            rvap12(i) = 0.0
-         endif
-      enddo
-      rvap12(1:2) = 0.0
-      rvap12(NN) = 0.0
-
-      limitvap(1:NN) = (rvap12(1:NN) + abs(rvap12(1:NN))) / (1. + abs(rvap12(1:NN)))
-
-    ! total fluxes
-      F12(2:NN) = 0.5d0*vdust(2:NN)*((1.d0+sign(1.d0,vdust(2:NN)))*rsigmad(1:NN-1)+    &
-                 (1.d0-sign(1.d0,vdust(2:NN)))*rsigmad(2:NN)) + 0.5d0 * dabs(vdust(2:NN)) * &
-                 (1.d0-dabs(vdust(2:NN)*dt/dr(2:NN)))*limit(2:NN)*(rsigmad(2:NN)-rsigmad(1:NN-1))  &
-                - diffl(2:NN)       ! total flux
-      F12(1) = min(0.d0, vdust(1)*rsigmad(1)) - diffl(1)
-
-      Fice12(2:NN) = 0.5d0*vdust(2:NN)*((1.d0+sign(1.d0,vdust(2:NN)))*rsice(1:NN-1)+(1.d0-sign(1.d0,vdust(2:NN)))  &
-                *rsice(2:NN)) + 0.5d0 * dabs(vdust(2:NN)) * (1.d0-dabs(vdust(2:NN)*dt/dr(2:NN)))*limitice(2:NN)  &
-                *(rsice(2:NN)-rsice(1:NN-1)) - difflice(2:NN)
-      Fice12(1) = min(0.d0, vdust(1)*rsice(1)) - difflice(1)
-
-      Fvap12(2:NN) = 0.5d0*vgas(2+nshift:NN+nshift)*((1.d0+sign(1.d0,vgas(2+nshift:NN+nshift)))*rsvap(1:NN-1) &
-                 +(1.d0-sign(1.d0,vgas(2+nshift:NN+nshift)))*rsvap(2:NN)) + 0.5d0*dabs(vgas(2+nshift:NN+nshift)) &
-                 *(1.d0-dabs(vgas(2+nshift:NN+nshift)*dt/dr(2:NN)))*limitvap(2:NN)*(rsvap(2:NN)-rsvap(1:NN-1)) &
-                 - diffvap(2:NN)
-      Fvap12(1) = min(0.d0, vgas(1+nshift) * rsvap(1)) - diffvap(1)
-
-   ! advection
-      rsigmad(1:NN-1) = max(rsigmad(1:NN-1) - (F12(2:NN) - F12(1:NN-1)) * dt / dr(1:NN-1), 1.d-28*rgrid(1+nshift:NN-1+nshift))
-      mflux(1:NN) = 2.*pi*F12(1:NN)
-      rsigmad(NN) = 1.d-28 *rgrid(NN+nshift)
-      sigmad(1:NN) = rsigmad(1:NN) / rgrid(1+nshift:NN+nshift)
-
-      rsice(1:NN-1) = max(rsice(1:NN-1) - (Fice12(2:NN) - Fice12(1:NN-1)) * dt / dr(1:NN-1), 5.e-29*rgrid(1+nshift:NN+nshift))
-      rsice(NN) = 5.e-29 * rgrid(NN+nshift)
-      sice(1:NN) = rsice(1:NN) / rgrid(1+nshift:NN+nshift)
-
-      rsvap(1:NN-1) = max(rsvap(1:NN-1) - (Fvap12(2:NN) - Fvap12(1:NN-1)) * dt / dr(1:NN-1), rgrid(1+nshift:NN+nshift)*5.e-29)
-      rsvap(NN) = rgrid(NN+nshift) * 5.e-29
-      svap(1:NN) = rsvap(1:NN) / rgrid(1+nshift:NN+nshift)
-
-    ! evaporation and recondensation
-      Peq(1:NN) = 1.14d+13*exp(-1.d0*6062./Tmid(1+nshift:NN+nshift))
-      Rcond(1:NN) = 6.*dsqrt(kk*Tmid(1+nshift:NN+nshift)/mH2O)/Hg(1:NN)/(pi*a1(1:NN)*rhop(1:NN)) ! condensation rate
-      Revap(1:NN) = 6.*dsqrt(2.*pi*mH2O/(kk*Tmid(1+nshift:NN+nshift)))*Peq(1:NN)/(pi*a1(1:NN)*rhop(1:NN)) ! evaporation rate
-      difference(1:NN) = (Rcond(1:NN)*svap(1:NN) - Revap(1:NN))*sice(1:NN)*dt
-      where (difference(1:NN) >0.)      ! condensation
-         sice(1:NN) = sice(1:NN) + min(difference(1:NN),svap(1:NN)-5.d-29)
-         sigmad(1:NN) = sigmad(1:NN) + min(difference(1:NN),svap(1:NN)-5.d-29)
-         svap(1:NN) = svap(1:NN) - min(difference(1:NN),svap(1:NN)-5.d-29)
-      elsewhere    ! evaporation
-         svap(1:NN) = svap(1:NN) + min(-1.*difference(1:NN), sice(1:NN)-5.d-29)
-         sigmad(1:NN) = sigmad(1:NN) - min(-1.*difference(1:NN),sice(1:NN)-5.d-29)
-         sice(1:NN) = sice(1:NN) - min(-1.*difference(1:NN),sice(1:NN) - 5.d-29)
-      end where
-
+        
+   ! do advection for each component separately
+      call advection(dt, rgrid, dr, srock, sigmag, vdust, Ddust, mrock)
+      call advection(dt, rgrid, dr, sice,  sigmag, vdust, Ddust, mice )
+      call advection(dt, rgrid, dr, svap,  sigmag, vgas(1+nshift:NN+nshift), Dgas(1+nshift:NN+nshift), mvap)
+      sigmad(:) = srock(:) + sice(:)
+      mflux(:) = mrock(:) + mice(:) ! this is the pebble flux, just for the output 
+      
    ! planetesimal formation
       do i = 1, NN
-         if ((sigmad(i) > 1.e-6) .and. (st1(i) > 1.d-2) .and. (etamid(i) > 1.d0)) then
-            dsigmaplts(i) = 1.d-5 * sigmad(i) / (2. * pi / omegaK(i)) * dt
+         if ((sigmad(i) > 1.d-6) .and. (st1(i) > 1.d-2) .and. (etamid(i) > 1.d0)) then
+            dsigmaplts(i) = min(1.d-5 * sigmad(i) / (2. * pi / omegaK(i)) * dt, sigmad(i) - 1.d-28)
             sigmaplts(i) = sigmaplts(i) + dsigmaplts(i)
-            sice(i) = sice(i) - min(sice(i) / sigmad(i),1.) * dsigmaplts(i)
+            sice(i) = sice(i) - min(sice(i) / sigmad(i), 1.d0) * dsigmaplts(i)
+            srock(i) = srock(i) - min(srock(i) / sigmad(i), 1.d0) * dsigmaplts(i)
             sigmad(i) = sigmad(i) - dsigmaplts(i)
-            rsigmad(i) = sigmad(i) * rgrid(i+nshift)
-            rsice(i) = sice(i) * rgrid(i+nshift)
          endif
       enddo
 
-   ! next timestep limitation
+    ! next timestep limitation
       dt = 1.5 * dt
-      dt = min(dt, 0.025*minval(dr(:) / dabs(vdust(:))))
-      dt = min(dt, 0.025*minval(dr(:)**2./Dgas(1+nshift:NN+nshift)))
+      dt = min(dt, 0.01*minval(dr(:) / dabs(vdust(:))))
+      dt = min(dt, 0.01*minval(dr(:)**2./Dgas(1+nshift:NN+nshift)))
 
-      deallocate(sigmag, cs, vK, omegaK, Pg, Hg, vfrag, Pvap, Peq, Rcond, Revap, difference)
+      deallocate(sigmag, cs, vK, omegaK, Pg, Hg, vfrag, Pvap, Peq, Rcond, Revap, difference, mrock, mice, mvap)
 
       return
    end subroutine dust_evol
