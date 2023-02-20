@@ -1,5 +1,5 @@
 !     ==============================================================
-!                 WRAPPER AROUND DIKSEVOL_MODULE.F90
+!                 WRAPPER AROUND DISKEVOL_MODULE.F90
 !     ==============================================================
 
 !     --------------------------------------------------------------
@@ -12,7 +12,7 @@ program diskevol
   implicit none
   doubleprecision :: time
   doubleprecision :: rin,rout,sig0,plsig0,alpha0,alphadust,dt,dtmin,dtrel,timesave,dtold,tinfall
-  doubleprecision :: tsav0,tend,rdisk0
+  doubleprecision :: tsav0,tend,rdisk0,dtdust,dusttime
   integer :: nr,ir,itsave=0,it,maxstep,nsave,itemp
   logical :: fex,dump,simstop
   character(len=100)               :: buffer, label
@@ -76,12 +76,12 @@ program diskevol
   sig0                         = 1.d-10
   plsig0                       = -1.0d0
   rdisk0                       = 100.*au
-  maxstep                      = 1000000000
+  maxstep                      = 100000000
   dtmin                        = 1*year
-  dtrel                        = 0.01
-  tinfall                      = 1d5*year  ! starting from this time, outputs are dumped more often
-  tsav0                        = 1d2*year  ! the first outout time
-  tend                         = 1d7*year  ! end time of the simulation
+  dtrel                        = 0.00001
+  tinfall                      = 1.3d5*year  ! starting from this time, outputs are dumped more often
+  tsav0                        = 1d2*year  ! the first output time
+  tend                         = 5d6*year  ! end time of the simulation
   nsave                        = 200
   !
   ! Read parameters values from the control file
@@ -162,6 +162,7 @@ program diskevol
   ! Reset some stuff related to data saving
   !
   time     = 0.d0
+  dusttime = 0.d0
   itsave   = 0
   call diskevol_reset_savefiles()
   !
@@ -170,7 +171,8 @@ program diskevol
   call save_data(time,itsave)
   itsave   = 1
   timesave = tsav0
-  dt = 1.e-4*year
+  dt = dtmin
+  dtdust = 1.d-4*year
   !
   ! Now do the time loop
   !
@@ -205,16 +207,18 @@ program diskevol
      !
      call diskevol_one_timestep(time,dt)
      !
-     dtold = dt
-     !
-     ! Dust evolution works according to the old time step but sets the new time step
-     !
-     call dust_evol(time,dt,diskevol_grid_r,diskevol_tprsigma,diskevol_temp,diskevol_nu, &
-                    diskevol_mstar,diskevol_ml_sigdot,diskevol_vr,alphadust,diskevol_gtd)
-     !
      ! Update time
      !
-     time = time + dtold
+     time = time + dt
+     !
+     ! Dust evolution: substepping to reach the gas time
+     !
+     do while (dusttime < time)
+        if (dusttime + dtdust > time) dtdust = time - dusttime
+        call dust_evol(dusttime,dtdust,diskevol_grid_r,diskevol_tprsigma,diskevol_temp,diskevol_nu, &
+                    diskevol_mstar,diskevol_ml_sigdot,diskevol_vr,alphadust,diskevol_gtd)
+        dusttime = dusttime + dtdust
+     enddo
      !
      ! Save, if necessary
      !
@@ -229,6 +233,7 @@ program diskevol
         itsave   = itsave + 1
         if (time < tinfall) then
            timesave = timesave * 10.
+           if (timesave > tinfall) timesave = tinfall
         else
            timesave = tinfall * (tend/tinfall)**((itsave-1.d0)/(nsave-1.d0))
         endif
@@ -238,6 +243,14 @@ program diskevol
      !
      if(simstop) then
         goto 20
+     endif
+     !
+     ! Set new gas timestep
+     !
+     if (time < 5.d5 * year) then
+        dt = dtmin
+     else
+        dt = max(dtmin, time * dtrel)
      endif
      !
   enddo
