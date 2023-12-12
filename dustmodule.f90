@@ -268,6 +268,7 @@ module dust_module
 
    ! fragmentation velocity
       vfrag(1:NN) = 1000./(1. + 9.*dexp(-2.*200.*(sice(1:NN)/sigmad(1:NN)-0.01)))
+      where(vfrag < 100.) vfrag = 100.
 
    ! pressure gradient and maximum drift speed
       do i = 1, NN-1
